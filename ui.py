@@ -8,23 +8,66 @@ st_autorefresh(interval=1000, key="dashboard_refresh")
 
 # --- Load CSV ---
 df = pd.read_csv("sac_calendar.csv")
-df['date'] = pd.to_datetime(df['date'])
-df['Year'] = df['subject'].str[:2]  # Ensure 'Year' column exists
+df["date"] = pd.to_datetime(df["date"])
+df["Year"] = df["subject"].str[:2]
 
+# --- Page setup ---
 st.set_page_config(page_title="VCE SAC Dashboard", layout="wide")
 st.markdown("<h1 style='text-align:center; color:#2c3e50;'>📅 VCE SAC Dashboard</h1>", unsafe_allow_html=True)
 
-# --- Sidebar filters ---
+today = pd.Timestamp.now()
+
+# --- Session state ---
+if "selected_subjects" not in st.session_state:
+    st.session_state.selected_subjects = []
+
+# --- Subject ordering ---
+ENGLISH = ["EAL", "ENG", "ENL", "LIT"]
+MATHS = ["MAG", "MAM", "MAS"]
+
+def subject_sort_key(subject):
+    code = subject[2:]  # strip 11 / 12
+    if code in ENGLISH:
+        return (0, ENGLISH.index(code))
+    if code in MATHS:
+        return (1, MATHS.index(code))
+    return (2, code)
+
+# --- Sidebar ---
 st.sidebar.header("Filter SACs")
-year = st.sidebar.selectbox("Select your year:", [11, 12])
-subjects = df[df['Year'] == str(year)]['subject'].unique()
+year = st.sidebar.selectbox("Select your year:", [12,11])
+
+view_mode = st.sidebar.radio(
+    "View mode:",
+    ["Single subject", "Selected subjects"]
+)
+
+subjects = sorted(
+    df[df["Year"] == str(year)]["subject"].unique(),
+    key=subject_sort_key
+)
+
 subject = st.sidebar.selectbox("Select your subject:", subjects)
 
-# --- Filter data ---
-subject_df = df[df['subject'] == subject].sort_values("date")
-num_sacs = len(subject_df)
+# Checkbox for selection
+checked = st.sidebar.checkbox(
+    "Include this subject",
+    value=subject in st.session_state.selected_subjects
+)
 
-# --- Helper function for fancy date ---
+if checked and subject not in st.session_state.selected_subjects:
+    st.session_state.selected_subjects.append(subject)
+
+if not checked and subject in st.session_state.selected_subjects:
+    st.session_state.selected_subjects.remove(subject)
+
+# Show selected subjects
+if st.session_state.selected_subjects:
+    st.sidebar.caption("Selected subjects:")
+    for s in st.session_state.selected_subjects:
+        st.sidebar.write("•", s)
+
+# --- Helper functions ---
 def fancy_date(dt):
     day = dt.day
     if 4 <= day <= 20 or 24 <= day <= 30:
@@ -33,73 +76,97 @@ def fancy_date(dt):
         suffix = ["st", "nd", "rd"][day % 10 - 1]
     return f"{day}{suffix} {dt.strftime('%B')}"
 
-# --- Countdown to next SAC ---
-today = pd.Timestamp.now()
-future_sacs = subject_df[subject_df['date'] >= today]
+def countdown(dt):
+    remaining = dt - today
+    if remaining.total_seconds() <= 0:
+        return "Completed"
+    d = remaining.days
+    h, r = divmod(remaining.seconds, 3600)
+    m, s = divmod(r, 60)
+    return f"{d}d {h}h {m}m {s}s"
 
-countdown_placeholder = st.empty()
-if not future_sacs.empty:
-    next_sac = future_sacs.iloc[0]['date']
-    remaining = next_sac - today
-    days = remaining.days
-    hours, rem = divmod(remaining.seconds, 3600)
-    minutes, seconds = divmod(rem, 60)
+# ======================================================
+# SINGLE SUBJECT VIEW (UNCHANGED UI)
+# ======================================================
+if view_mode == "Single subject":
 
-    countdown_placeholder.markdown(
-        f"""
-        <div style='
-            background: linear-gradient(90deg, #f39c12, #e74c3c);
-            color: white;
-            padding: 30px;
-            border-radius: 15px;
-            text-align: center;
-            font-size: 36px;
-            font-weight: bold;
-            box-shadow: 2px 2px 15px rgba(0,0,0,0.3);
-        '>
-            ⏳ Next SAC: {next_sac.strftime('%d/%m/%Y')} | {fancy_date(next_sac)}<br>
-            <span style="font-size:48px;">{days}d {hours}h {minutes}m {seconds}s</span>
+    subject_df = df[df["subject"] == subject].sort_values("date")
+    future = subject_df[subject_df["date"] >= today]
+
+    if not future.empty:
+        next_sac = future.iloc[0]["date"]
+        st.markdown(f"""
+        <div style='background:linear-gradient(90deg,#f39c12,#e74c3c);
+        color:white;padding:30px;border-radius:15px;
+        text-align:center;font-size:36px;font-weight:bold;' >
+        ⏳ Next SAC: {next_sac.strftime('%d/%m/%Y')} | {fancy_date(next_sac)}<br>
+        <span style='font-size:48px;'>{countdown(next_sac)}</span>
         </div>
-        """, unsafe_allow_html=True
-    )
+        """, unsafe_allow_html=True)
+
+    st.markdown("### 📌 SAC List")
+
+    for i, (_, row) in enumerate(subject_df.iterrows(), 1):
+        bg = "#d5f5e3" if row["date"] < today else "#fcf3cf"
+        st.markdown(f"""
+        <div style='padding:15px;border-radius:12px;
+        background:{bg};margin-bottom:10px;
+        display:flex;justify-content:space-between;
+        box-shadow:2px 2px 10px rgba(0,0,0,0.1);'>
+        <strong style='color:#2c3e50'>{i}. {row['subject']}</strong>
+        <span style='color:#2c3e50'>{row['date'].strftime('%d/%m/%Y')} | {fancy_date(row['date'])}</span>
+        </div>
+        """, unsafe_allow_html=True)
+# ======================================================
+# SELECTED SUBJECTS VIEW
+# ======================================================
 else:
-    countdown_placeholder.markdown(
-        "<div style='background-color:#2ecc71; color:white; padding:30px; border-radius:15px; text-align:center; font-size:36px; font-weight:bold;'>🎉 All SACs Completed!</div>",
-        unsafe_allow_html=True
-    )
+    selected_df = df[df["subject"].isin(st.session_state.selected_subjects)].sort_values("date")
+    future = selected_df[selected_df["date"] >= today]
 
-# --- Styled progress bar ---
-completed_sacs = sum(subject_df['date'] < today)
-progress_percent = int((completed_sacs / num_sacs) * 100) if num_sacs > 0 else 0
+    # --- Total progress across all selected subjects ---
+    total_sacs = len(selected_df)
+    total_completed = sum(selected_df["date"] < today)
+    total_progress = int((total_completed / total_sacs) * 100) if total_sacs > 0 else 0
 
-st.markdown(f"<h3 style='color:#34495e;'>Progress: {completed_sacs}/{num_sacs} SACs Completed</h3>", unsafe_allow_html=True)
-st.progress(progress_percent)
-# --- Display SACs in cards with numbering ---
-st.markdown("<h3 style='color:#34495e;'>📌 SAC List</h3>", unsafe_allow_html=True)
+    if total_sacs > 0:
+        st.markdown("## 🏆 Overall Progress for Selected Subjects")
+        st.progress(total_progress)
+        st.caption(f"{total_completed}/{total_sacs} SACs completed across all selected subjects")
 
-for i, (_, row) in enumerate(subject_df.iterrows(), start=1):  # start=1 gives 1,2,3...
-    # Different background for past/future SACs
-    if row['date'] < today:
-        bg_color = "#d5f5e3"  # light green for completed
-    else:
-        bg_color = "#fcf3cf"  # light yellow for upcoming
-
-    st.markdown(
-        f"""
-        <div style='
-            padding: 15px; 
-            border: 2px solid #ccc; 
-            border-radius: 12px; 
-            margin-bottom: 10px; 
-            background-color: {bg_color};
-            color: #2c3e50;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 2px 2px 10px rgba(0,0,0,0.1);
-        '>
-            <span style='font-weight:bold; font-size:18px;'>{i}. {row['subject']}</span>
-            <span style='font-size:16px;'> {row['date'].strftime('%d/%m/%Y')} | {fancy_date(row['date'])}</span>
+    # --- Next SAC overall ---
+    if not future.empty:
+        next_row = future.iloc[0]
+        st.markdown(f"""
+        <div style='background:linear-gradient(90deg,#8e44ad,#3498db);
+        color:white;padding:30px;border-radius:15px;
+        text-align:center;font-size:36px;font-weight:bold;' >
+        ⏳ NEXT SAC (All Subjects)<br>
+        {next_row['subject']} – {next_row['date'].strftime('%d/%m/%Y')}<br>
+        <span style='font-size:48px;'>{countdown(next_row['date'])}</span>
         </div>
-        """, unsafe_allow_html=True
-    )
+        """, unsafe_allow_html=True)
+
+    # --- Individual subjects ---
+    for subj in st.session_state.selected_subjects:
+        st.markdown(f"## 📘 {subj}")
+        subj_df = df[df["subject"] == subj].sort_values("date")
+
+        # Subject-level progress
+        num_completed = sum(subj_df["date"] < today)
+        total_subj_sacs = len(subj_df)
+        progress_percent = int((num_completed / total_subj_sacs) * 100) if total_subj_sacs > 0 else 0
+        st.progress(progress_percent)
+        st.caption(f"{num_completed}/{total_subj_sacs} SACs completed")
+
+        for _, row in subj_df.iterrows():
+            bg = "#d5f5e3" if row["date"] < today else "#fcf3cf"
+            st.markdown(f"""
+            <div style='padding:12px;border-radius:12px;
+            background:{bg};margin-bottom:8px;
+            display:flex;justify-content:space-between;
+            box-shadow:1px 1px 6px rgba(0,0,0,0.1);'>
+            <strong style='color:#2c3e50'>{row['subject']}</strong>
+            <span style='color:#2c3e50'>{row['date'].strftime('%d/%m/%Y')} | {fancy_date(row['date'])}</span>
+            </div>
+            """, unsafe_allow_html=True)
