@@ -2,6 +2,11 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
+import os, json, uuid
+
+# Make sure to install the cookies manager first:
+# pip install streamlit-cookies-manager
+from streamlit_cookies_manager import EncryptedCookieManager
 
 # --- Auto-refresh every second ---
 st_autorefresh(interval=1000, key="dashboard_refresh")
@@ -17,16 +22,46 @@ st.markdown("<h1 style='text-align:center; color:#2c3e50;'>📅 VCE SAC Dashboar
 
 today = pd.Timestamp.now()
 
-# --- Session state ---
-if "selected_subjects" not in st.session_state:
+# --- Create folder to store user data ---
+USER_DATA_DIR = "user_data"
+os.makedirs(USER_DATA_DIR, exist_ok=True)
+
+# --- Setup persistent cookies ---
+cookies = EncryptedCookieManager(
+    prefix="sac_dashboard_",
+    password="my-very-secret-password",  # change this for security
+)
+if not cookies.ready():
+    st.stop()  # wait until cookies are loaded
+
+# --- Get or create user_id cookie ---
+if "user_id" in cookies:
+    user_id = cookies["user_id"]
+else:
+    user_id = str(uuid.uuid4())
+    cookies["user_id"] = user_id
+    cookies.save()
+
+USER_FILE = os.path.join(USER_DATA_DIR, f"user_{user_id}.json")
+
+# --- Load user data if exists ---
+if os.path.exists(USER_FILE):
+    with open(USER_FILE, "r") as f:
+        user_data = json.load(f)
+        st.session_state.selected_subjects = user_data.get("selected_subjects", [])
+        st.session_state.view_mode = user_data.get("view_mode", "Single subject")
+        st.session_state.year = user_data.get("year", 12)
+else:
     st.session_state.selected_subjects = []
+    st.session_state.view_mode = "Single subject"
+    st.session_state.year = 12  # default year
 
 # --- Subject ordering ---
-ENGLISH = ["ENG", "EAL", "ENL", "LIT"]
+ENGLISH = ["EAL", "ENG", "ENL", "LIT"]
 MATHS = ["MAG", "MAM", "MAS"]
 
 def subject_sort_key(subject):
-    code = subject[2:]
+    code = subject[2:]  # remove 11/12 prefix
     if code in ENGLISH:
         return (0, ENGLISH.index(code))
     if code in MATHS:
@@ -58,7 +93,7 @@ def sac_card(row):
     elif delta_days <= 3:
         bg = "#f39c12"  # urgent
     else:
-        bg = "#fcf3cf"  # future
+        bg = "#fcf3cf"  # upcoming
     return f"""
     <div style='padding:12px;border-radius:12px;
     background:{bg};margin-bottom:8px;
@@ -71,17 +106,21 @@ def sac_card(row):
 
 # --- Sidebar ---
 st.sidebar.header("Filter SACs")
-year = st.sidebar.selectbox("Select your year:", [11, 12], index=1)  # default 12
 
+# Year select
+st.session_state.year = st.sidebar.selectbox("Select your year:", [11, 12], index=[11, 12].index(st.session_state.year))
+
+# Subjects for that year
 subjects = sorted(
-    df[df["Year"] == str(year)]["subject"].unique(),
+    df[df["Year"] == str(st.session_state.year)]["subject"].unique(),
     key=subject_sort_key
 )
 
 # View mode
-view_mode = st.sidebar.radio(
+st.session_state.view_mode = st.sidebar.radio(
     "View mode:",
-    ["Single subject", "Selected subjects"]
+    ["Single subject", "Selected subjects"],
+    index=["Single subject", "Selected subjects"].index(st.session_state.view_mode)
 )
 
 # Single subject select
@@ -97,16 +136,24 @@ if checked and subject not in st.session_state.selected_subjects:
 if not checked and subject in st.session_state.selected_subjects:
     st.session_state.selected_subjects.remove(subject)
 
-# Show currently selected subjects
+# Show selected subjects
 if st.session_state.selected_subjects:
     st.sidebar.caption("Selected subjects:")
     for s in st.session_state.selected_subjects:
         st.sidebar.write("•", s)
 
+# --- Save user data automatically ---
+with open(USER_FILE, "w") as f:
+    json.dump({
+        "selected_subjects": st.session_state.selected_subjects,
+        "view_mode": st.session_state.view_mode,
+        "year": st.session_state.year
+    }, f)
+
 # ======================================================
 # SINGLE SUBJECT VIEW
 # ======================================================
-if view_mode == "Single subject":
+if st.session_state.view_mode == "Single subject":
     subject_df = df[df["subject"] == subject].sort_values("date")
     future = subject_df[subject_df["date"] >= today]
 
