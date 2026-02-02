@@ -44,17 +44,20 @@ else:
 
 USER_FILE = os.path.join(USER_DATA_DIR, f"user_{user_id}.json")
 
-# --- Load user data if exists ---
+# --- Load user data if exists, handle empty/corrupt JSON ---
 if os.path.exists(USER_FILE):
-    with open(USER_FILE, "r") as f:
-        user_data = json.load(f)
-        st.session_state.selected_subjects = user_data.get("selected_subjects", [])
-        st.session_state.view_mode = user_data.get("view_mode", "Single subject")
-        st.session_state.year = user_data.get("year", 12)
+    try:
+        with open(USER_FILE, "r") as f:
+            user_data = json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
+        user_data = {}  # start fresh if file is empty or corrupted
 else:
-    st.session_state.selected_subjects = []
-    st.session_state.view_mode = "Single subject"
-    st.session_state.year = 12  # default year
+    user_data = {}
+
+# Load session state from user_data or defaults
+st.session_state.selected_subjects = user_data.get("selected_subjects", [])
+st.session_state.view_mode = user_data.get("view_mode", "Single subject")
+st.session_state.year = user_data.get("year", 12)
 
 # --- Subject ordering ---
 ENGLISH = ["EAL", "ENG", "ENL", "LIT"]
@@ -108,7 +111,9 @@ def sac_card(row):
 st.sidebar.header("Filter SACs")
 
 # Year select
-st.session_state.year = st.sidebar.selectbox("Select your year:", [11, 12], index=[11, 12].index(st.session_state.year))
+st.session_state.year = st.sidebar.selectbox(
+    "Select your year:", [11, 12], index=[11, 12].index(st.session_state.year)
+)
 
 # Subjects for that year
 subjects = sorted(
@@ -119,7 +124,7 @@ subjects = sorted(
 # View mode
 st.session_state.view_mode = st.sidebar.radio(
     "View mode:",
-    ["Single subject", "Selected subjects", "All subjects"],  # added "All subjects"
+    ["Single subject", "Selected subjects", "All subjects"],
     index=["Single subject", "Selected subjects", "All subjects"].index(st.session_state.view_mode)
 )
 
@@ -218,12 +223,12 @@ elif st.session_state.view_mode == "Selected subjects":
             st.markdown(sac_card(row), unsafe_allow_html=True)
 
 # ======================================================
-# ALL SUBJECTS VIEW WITH YEAR FILTER
+# ALL SUBJECTS VIEW WITH YEAR FILTER AT TOP
 # ======================================================
-# Year filter at top of page for All subjects
-if st.session_state.view_mode == "All subjects":
+elif st.session_state.view_mode == "All subjects":
+    st.markdown("### 🔎 Filter by Year")
     year_filter = st.selectbox(
-        "Filter by year for All Subjects:",
+        "",
         ["All", 11, 12],
         index=["All", 11, 12].index("All")
     )
