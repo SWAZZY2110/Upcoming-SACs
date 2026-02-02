@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
-import os, json, uuid
+import os, json, uuid, sqlite3
 
 # --- Auto-refresh every second ---
 st_autorefresh(interval=1000, key="dashboard_refresh")
@@ -18,28 +18,40 @@ st.markdown("<h1 style='text-align:center; color:#2c3e50;'>📅 VCE SAC Dashboar
 
 today = pd.Timestamp.now()
 
-# --- User data folder ---
-USER_DATA_DIR = "user_data"
-os.makedirs(USER_DATA_DIR, exist_ok=True)
+# --- Database setup ---
+DB_FILE = "user_data.db"
+conn = sqlite3.connect(DB_FILE)
+c = conn.cursor()
+c.execute("""
+CREATE TABLE IF NOT EXISTS user_data (
+    user_id TEXT PRIMARY KEY,
+    year INTEGER,
+    view_mode TEXT,
+    selected_subjects TEXT
+)
+""")
+conn.commit()
 
-# --- Persistent user ID ---
-USER_FILE = os.path.join(USER_DATA_DIR, "user_data.json")  # single JSON for simplicity
+# --- User identification via cookie ---
+if "user_id" not in st.session_state:
+    if "user_id_cookie" in st.query_params:
+        user_id = st.query_params["user_id_cookie"][0]
 
-if os.path.exists(USER_FILE):
-    try:
-        with open(USER_FILE, "r") as f:
-            user_data = json.load(f)
-            st.session_state.selected_subjects = user_data.get("selected_subjects", [])
-            st.session_state.view_mode = user_data.get("view_mode", "Single subject")
-            st.session_state.year = user_data.get("year", 12)
-    except json.decoder.JSONDecodeError:
-        st.session_state.selected_subjects = []
-        st.session_state.view_mode = "Single subject"
-        st.session_state.year = 12
+    else:
+        user_id = str(uuid.uuid4())
+    st.session_state.user_id = user_id
+
+# --- Load user data from DB ---
+c.execute("SELECT year, view_mode, selected_subjects FROM user_data WHERE user_id=?", (st.session_state.user_id,))
+row = c.fetchone()
+if row:
+    st.session_state.year = row[0]
+    st.session_state.view_mode = row[1]
+    st.session_state.selected_subjects = json.loads(row[2])
 else:
-    st.session_state.selected_subjects = []
-    st.session_state.view_mode = "Single subject"
     st.session_state.year = 12
+    st.session_state.view_mode = "Single subject"
+    st.session_state.selected_subjects = []
 
 # --- Subject ordering ---
 ENGLISH = ["EAL", "ENG", "ENL", "LIT"]
@@ -93,7 +105,9 @@ def sac_card(row):
 st.sidebar.header("Filter SACs")
 
 # Year select
-st.session_state.year = st.sidebar.selectbox("Select your year:", [11, 12], index=[11, 12].index(st.session_state.year))
+st.session_state.year = st.sidebar.selectbox(
+    "Select your year:", [12,11], index=[12,11].index(st.session_state.year)
+)
 
 # Subjects for that year
 subjects = sorted(
@@ -127,13 +141,21 @@ if st.session_state.selected_subjects:
     for s in st.session_state.selected_subjects:
         st.sidebar.write("•", s)
 
-# --- Save user data automatically ---
-with open(USER_FILE, "w") as f:
-    json.dump({
-        "selected_subjects": st.session_state.selected_subjects,
-        "view_mode": st.session_state.view_mode,
-        "year": st.session_state.year
-    }, f)
+# --- Save user data to DB ---
+c.execute("""
+INSERT INTO user_data(user_id, year, view_mode, selected_subjects)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(user_id) DO UPDATE SET
+    year=excluded.year,
+    view_mode=excluded.view_mode,
+    selected_subjects=excluded.selected_subjects
+""", (
+    st.session_state.user_id,
+    st.session_state.year,
+    st.session_state.view_mode,
+    json.dumps(st.session_state.selected_subjects)
+))
+conn.commit()
 
 # --- Determine subjects to show ---
 if st.session_state.view_mode == "Single subject":
@@ -185,9 +207,7 @@ for subj in subjects_to_show:
 
 # Bottom chronological list of all selected SACs (collapsed by default)
 st.markdown("---")
-st.markdown("### 📋 All Selected SACs (Chronological)")
-# Bottom chronological list of all selected SACs (collapsed by default)
 if st.session_state.selected_subjects:
-    with st.expander("📋 All Selected SACs (Chronological)", expanded=False):
+    with st.expander("### 📋 All Selected SACs (Chronological)", expanded=False):
         for _, row in all_selected_df.iterrows():
             st.markdown(sac_card(row), unsafe_allow_html=True)
