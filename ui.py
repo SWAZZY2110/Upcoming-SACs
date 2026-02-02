@@ -202,14 +202,13 @@ elif st.session_state.view_mode == "Selected subjects":
             for _, row in subj_df.iterrows():
                 st.markdown(sac_card(row), unsafe_allow_html=True)
 
-# Chronological SAC list for all selected subjects (auto-closed)
-if not selected_df.empty:
-    st.markdown("---")
-    st.markdown("### **All SACs in Chronological Order**")  # <-- bolded heading
-    with st.expander("📅 View All Selected SACs Chronologically", expanded=False):
-        for _, row in selected_df.sort_values("date").iterrows():
-            st.markdown(sac_card(row), unsafe_allow_html=True)
-
+    # --- Chronological SAC list for all selected subjects (auto-closed) ---
+    if not selected_df.empty:  # make sure selected_df is defined in this scope
+        st.markdown("---")  # horizontal line
+        st.markdown("### **All SACs in Chronological Order**")  # bold heading
+        with st.expander("📅 View All Selected SACs Chronologically", expanded=False):
+            for _, row in selected_df.sort_values("date").iterrows():
+                st.markdown(sac_card(row), unsafe_allow_html=True)
 
 # ======================================================
 # ALL SUBJECTS VIEW WITH YEAR FILTER AT TOP
