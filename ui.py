@@ -4,7 +4,7 @@ from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 import os, json, uuid
 
-# Make sure to install the cookies manager first:
+# Install cookies manager first:
 # pip install streamlit-cookies-manager
 from streamlit_cookies_manager import EncryptedCookieManager
 
@@ -29,10 +29,10 @@ os.makedirs(USER_DATA_DIR, exist_ok=True)
 # --- Setup persistent cookies ---
 cookies = EncryptedCookieManager(
     prefix="sac_dashboard_",
-    password="my-very-secret-password",  # change this for security
+    password="my-very-secret-password",  # change this
 )
 if not cookies.ready():
-    st.stop()  # wait until cookies are loaded
+    st.stop()  # wait until cookies load
 
 # --- Get or create user_id cookie ---
 if "user_id" in cookies:
@@ -44,17 +44,16 @@ else:
 
 USER_FILE = os.path.join(USER_DATA_DIR, f"user_{user_id}.json")
 
-# --- Load user data if exists, handle empty/corrupt JSON ---
+# --- Load user data safely ---
 if os.path.exists(USER_FILE):
     try:
         with open(USER_FILE, "r") as f:
             user_data = json.load(f)
     except (json.JSONDecodeError, FileNotFoundError):
-        user_data = {}  # start fresh if file is empty or corrupted
+        user_data = {}
 else:
     user_data = {}
 
-# Load session state from user_data or defaults
 st.session_state.selected_subjects = user_data.get("selected_subjects", [])
 st.session_state.view_mode = user_data.get("view_mode", "Single subject")
 st.session_state.year = user_data.get("year", 12)
@@ -64,7 +63,7 @@ ENGLISH = ["EAL", "ENG", "ENL", "LIT"]
 MATHS = ["MAG", "MAM", "MAS"]
 
 def subject_sort_key(subject):
-    code = subject[2:]  # remove 11/12 prefix
+    code = subject[2:]
     if code in ENGLISH:
         return (0, ENGLISH.index(code))
     if code in MATHS:
@@ -92,11 +91,11 @@ def countdown(dt):
 def sac_card(row):
     delta_days = (row["date"] - datetime.now()).days
     if delta_days < 0:
-        bg = "#d5f5e3"  # completed
+        bg = "#d5f5e3"
     elif delta_days <= 3:
-        bg = "#f39c12"  # urgent
+        bg = "#f39c12"
     else:
-        bg = "#fcf3cf"  # upcoming
+        bg = "#fcf3cf"
     return f"""
     <div style='padding:12px;border-radius:12px;
     background:{bg};margin-bottom:8px;
@@ -109,45 +108,29 @@ def sac_card(row):
 
 # --- Sidebar ---
 st.sidebar.header("Filter SACs")
-
-# Year select
 st.session_state.year = st.sidebar.selectbox(
     "Select your year:", [11, 12], index=[11, 12].index(st.session_state.year)
 )
-
-# Subjects for that year
 subjects = sorted(
     df[df["Year"] == str(st.session_state.year)]["subject"].unique(),
     key=subject_sort_key
 )
-
-# View mode
 st.session_state.view_mode = st.sidebar.radio(
-    "View mode:",
-    ["Single subject", "Selected subjects", "All subjects"],
+    "View mode:", ["Single subject", "Selected subjects", "All subjects"],
     index=["Single subject", "Selected subjects", "All subjects"].index(st.session_state.view_mode)
 )
-
-# Single subject select
 subject = st.sidebar.selectbox("Select a subject:", subjects)
-
-# Checkbox to include in selected subjects
-checked = st.sidebar.checkbox(
-    "Select this subject",
-    value=subject in st.session_state.selected_subjects
-)
+checked = st.sidebar.checkbox("Select this subject", value=subject in st.session_state.selected_subjects)
 if checked and subject not in st.session_state.selected_subjects:
     st.session_state.selected_subjects.append(subject)
 if not checked and subject in st.session_state.selected_subjects:
     st.session_state.selected_subjects.remove(subject)
-
-# Show selected subjects
 if st.session_state.selected_subjects:
     st.sidebar.caption("Selected subjects:")
     for s in st.session_state.selected_subjects:
         st.sidebar.write("•", s)
 
-# --- Save user data automatically ---
+# --- Save user data ---
 with open(USER_FILE, "w") as f:
     json.dump({
         "selected_subjects": st.session_state.selected_subjects,
@@ -173,9 +156,10 @@ if st.session_state.view_mode == "Single subject":
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("### 📌 SAC List")
-    for i, (_, row) in enumerate(subject_df.iterrows(), start=1):
-        st.markdown(sac_card(row), unsafe_allow_html=True)
+    # Subject expander
+    with st.expander(f"📘 {subject}", expanded=True):
+        for _, row in subject_df.iterrows():
+            st.markdown(sac_card(row), unsafe_allow_html=True)
 
 # ======================================================
 # SELECTED SUBJECTS VIEW
@@ -206,32 +190,33 @@ elif st.session_state.view_mode == "Selected subjects":
         st.progress(overall_progress)
         st.caption(f"{total_completed}/{total_sacs} SACs completed across all selected subjects")
 
-    # Display each subject individually
+    # Each subject expander (auto-open)
     for subj in st.session_state.selected_subjects:
-        st.markdown(f"## 📘 {subj}")
         subj_df = df[df["subject"] == subj].sort_values("date")
-
-        # Subject progress
         num_completed = sum(subj_df["date"] < today)
         total_subj_sacs = len(subj_df)
         subj_progress = int((num_completed / total_subj_sacs) * 100) if total_subj_sacs > 0 else 0
-        st.progress(subj_progress)
-        st.caption(f"{num_completed}/{total_subj_sacs} SACs completed")
 
-        # SAC list
-        for _, row in subj_df.iterrows():
+        with st.expander(f"📘 {subj} ({num_completed}/{total_subj_sacs} completed)", expanded=True):
+            st.progress(subj_progress)
+            for _, row in subj_df.iterrows():
+                st.markdown(sac_card(row), unsafe_allow_html=True)
+
+# Chronological SAC list for all selected subjects (auto-closed)
+if not selected_df.empty:
+    st.markdown("---")
+    st.markdown("### **All SACs in Chronological Order**")  # <-- bolded heading
+    with st.expander("📅 View All Selected SACs Chronologically", expanded=False):
+        for _, row in selected_df.sort_values("date").iterrows():
             st.markdown(sac_card(row), unsafe_allow_html=True)
+
 
 # ======================================================
 # ALL SUBJECTS VIEW WITH YEAR FILTER AT TOP
 # ======================================================
 elif st.session_state.view_mode == "All subjects":
     st.markdown("### 🔎 Filter by Year")
-    year_filter = st.selectbox(
-        "",
-        ["All", 11, 12],
-        index=["All", 11, 12].index("All")
-    )
+    year_filter = st.selectbox("", ["All", 11, 12], index=["All", 11, 12].index("All"))
 
     if year_filter == "All":
         all_df = df.sort_values(["date", "subject"])
@@ -262,18 +247,14 @@ elif st.session_state.view_mode == "All subjects":
         st.progress(overall_progress)
         st.caption(f"{total_completed}/{total_sacs} SACs completed in total")
 
-    # Display SACs grouped by subject
+    # Per-subject expanders
     for subj in sorted(all_df["subject"].unique(), key=subject_sort_key):
-        st.markdown(f"## 📘 {subj}")
         subj_df = all_df[all_df["subject"] == subj].sort_values("date")
-
-        # Subject progress
         num_completed = sum(subj_df["date"] < today)
         total_subj_sacs = len(subj_df)
         subj_progress = int((num_completed / total_subj_sacs) * 100) if total_subj_sacs > 0 else 0
-        st.progress(subj_progress)
-        st.caption(f"{num_completed}/{total_subj_sacs} SACs completed")
 
-        # SAC list
-        for _, row in subj_df.iterrows():
-            st.markdown(sac_card(row), unsafe_allow_html=True)
+        with st.expander(f"📘 {subj} ({num_completed}/{total_subj_sacs} completed)", expanded=True):
+            st.progress(subj_progress)
+            for _, row in subj_df.iterrows():
+                st.markdown(sac_card(row), unsafe_allow_html=True)
