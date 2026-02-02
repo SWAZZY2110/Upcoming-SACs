@@ -119,8 +119,8 @@ subjects = sorted(
 # View mode
 st.session_state.view_mode = st.sidebar.radio(
     "View mode:",
-    ["Single subject", "Selected subjects"],
-    index=["Single subject", "Selected subjects"].index(st.session_state.view_mode)
+    ["Single subject", "Selected subjects", "All subjects"],  # added "All subjects"
+    index=["Single subject", "Selected subjects", "All subjects"].index(st.session_state.view_mode)
 )
 
 # Single subject select
@@ -175,7 +175,7 @@ if st.session_state.view_mode == "Single subject":
 # ======================================================
 # SELECTED SUBJECTS VIEW
 # ======================================================
-else:
+elif st.session_state.view_mode == "Selected subjects":
     selected_df = df[df["subject"].isin(st.session_state.selected_subjects)].sort_values("date")
     future = selected_df[selected_df["date"] >= today]
 
@@ -205,6 +205,62 @@ else:
     for subj in st.session_state.selected_subjects:
         st.markdown(f"## 📘 {subj}")
         subj_df = df[df["subject"] == subj].sort_values("date")
+
+        # Subject progress
+        num_completed = sum(subj_df["date"] < today)
+        total_subj_sacs = len(subj_df)
+        subj_progress = int((num_completed / total_subj_sacs) * 100) if total_subj_sacs > 0 else 0
+        st.progress(subj_progress)
+        st.caption(f"{num_completed}/{total_subj_sacs} SACs completed")
+
+        # SAC list
+        for _, row in subj_df.iterrows():
+            st.markdown(sac_card(row), unsafe_allow_html=True)
+
+# ======================================================
+# ALL SUBJECTS VIEW WITH YEAR FILTER
+# ======================================================
+# Year filter at top of page for All subjects
+if st.session_state.view_mode == "All subjects":
+    year_filter = st.selectbox(
+        "Filter by year for All Subjects:",
+        ["All", 11, 12],
+        index=["All", 11, 12].index("All")
+    )
+
+    if year_filter == "All":
+        all_df = df.sort_values(["date", "subject"])
+    else:
+        all_df = df[df["Year"] == str(year_filter)].sort_values(["date", "subject"])
+
+    future = all_df[all_df["date"] >= today]
+
+    # Next SAC hero card
+    if not future.empty:
+        next_row = future.iloc[0]
+        st.markdown(f"""
+        <div style='background:linear-gradient(90deg,#16a085,#1abc9c);
+        color:#ffffff;padding:30px;border-radius:15px;
+        text-align:center;font-size:36px;font-weight:bold;' >
+        ⏳ NEXT SAC (All Subjects)<br>
+        {next_row['subject']} – {next_row['date'].strftime('%d/%m/%Y')}<br>
+        <span style='font-size:48px;'>{countdown(next_row['date'])}</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Overall progress
+    total_sacs = len(all_df)
+    total_completed = sum(all_df["date"] < today)
+    overall_progress = int((total_completed / total_sacs) * 100) if total_sacs > 0 else 0
+    if total_sacs > 0:
+        st.markdown("## 🏆 Overall Progress Across All Subjects")
+        st.progress(overall_progress)
+        st.caption(f"{total_completed}/{total_sacs} SACs completed in total")
+
+    # Display SACs grouped by subject
+    for subj in sorted(all_df["subject"].unique(), key=subject_sort_key):
+        st.markdown(f"## 📘 {subj}")
+        subj_df = all_df[all_df["subject"] == subj].sort_values("date")
 
         # Subject progress
         num_completed = sum(subj_df["date"] < today)
