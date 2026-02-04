@@ -57,6 +57,7 @@ else:
 st.session_state.selected_subjects = user_data.get("selected_subjects", [])
 st.session_state.view_mode = user_data.get("view_mode", "Single subject")
 st.session_state.year = user_data.get("year", 12)
+st.session_state.external_subjects = user_data.get("external_subjects", [])
 
 # --- Subject ordering ---
 ENGLISH = ["EAL", "ENG", "ENL", "LIT"]
@@ -106,6 +107,12 @@ def sac_card(row):
     </div>
     """
 
+def infer_subject_year(subject_name, fallback_year):
+    subject_prefix = subject_name.strip()[:2]
+    if subject_prefix.isdigit() and subject_prefix in {"11", "12"}:
+        return int(subject_prefix)
+    return fallback_year
+
 # --- Sidebar ---
 st.sidebar.header("Filter SACs")
 st.session_state.year = st.sidebar.selectbox(
@@ -130,12 +137,53 @@ if st.session_state.selected_subjects:
     for s in st.session_state.selected_subjects:
         st.sidebar.write("•", s)
 
+# --- External subject entry ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("Add External Subject")
+with st.sidebar.form("external_subject_form"):
+    external_subject_name = st.text_input("Subject name")
+    external_subject_date = st.date_input("SAC date", value=today.date())
+    external_year_choice = st.selectbox(
+        "Year (optional)",
+        ["Infer from subject", 11, 12]
+    )
+    external_submit = st.form_submit_button("Add subject")
+
+if external_submit:
+    subject_name_clean = external_subject_name.strip()
+    if subject_name_clean:
+        if external_year_choice == "Infer from subject":
+            external_year = infer_subject_year(subject_name_clean, st.session_state.year)
+        else:
+            external_year = external_year_choice
+        st.session_state.external_subjects.append({
+            "subject": subject_name_clean,
+            "date": external_subject_date.isoformat(),
+            "year": external_year,
+        })
+        st.session_state.external_subject_notice = f"Added {subject_name_clean} on {external_subject_date.strftime('%d/%m/%Y')}."
+    else:
+        st.session_state.external_subject_notice = "Please enter a subject name before adding."
+
+if "external_subject_notice" in st.session_state:
+    if st.session_state.external_subject_notice.startswith("Added"):
+        st.sidebar.success(st.session_state.external_subject_notice)
+    else:
+        st.sidebar.warning(st.session_state.external_subject_notice)
+
+if st.session_state.external_subjects:
+    st.sidebar.caption("Your added subjects:")
+    for item in st.session_state.external_subjects:
+        date_value = datetime.fromisoformat(item["date"]).strftime("%d/%m/%Y")
+        st.sidebar.write(f"• {item['subject']} — {date_value}")
+
 # --- Save user data ---
 with open(USER_FILE, "w") as f:
     json.dump({
         "selected_subjects": st.session_state.selected_subjects,
         "view_mode": st.session_state.view_mode,
-        "year": st.session_state.year
+        "year": st.session_state.year,
+        "external_subjects": st.session_state.external_subjects
     }, f)
 
 # ======================================================
