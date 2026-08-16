@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VCE Study Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="hero">
+        <nav class="topbar">
+          <div class="brand"><span>✦</span> VCE Focus</div>
+          <a href="https://www.vcaa.vic.edu.au/administration/key-dates/vce-examination-timetable" target="_blank" rel="noreferrer">VCAA timetable ↗</a>
+        </nav>
+        <div class="hero-grid">
+          <section>
+            <p class="eyebrow">Local exam + SAC planner</p>
+            <h1>Your dashboard for English, Methods, Specialist, Physics & Chemistry.</h1>
+            <p class="subtext">A cleaner offline-friendly tracker for your core VCE subjects, with the 2026 VCAA exam timetable built in.</p>
+          </section>
+          <section class="next-card" id="nextCard"></section>
+        </div>
+      </header>
+
+      <main>
+        <section class="controls panel">
+          <div>
+            <label for="subjectFilter">Subject</label>
+            <select id="subjectFilter"></select>
+          </div>
+          <div>
+            <label for="typeFilter">Assessment type</label>
+            <select id="typeFilter">
+              <option value="all">All assessments</option>
+              <option value="SAC">SACs only</option>
+              <option value="Exam">Exams only</option>
+            </select>
+          </div>
+          <button id="resetBtn" type="button">Reset progress</button>
+        </section>
+
+        <section class="stats" id="stats"></section>
+
+        <section class="panel timeline-wrap">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Timeline</p>
+              <h2>Upcoming and completed dates</h2>
+            </div>
+            <p id="dateStamp"></p>
+          </div>
+          <div class="timeline" id="timeline"></div>
+        </section>
+
+        <section class="panel subjects-wrap">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Subject view</p>
+              <h2>Progress by subject</h2>
+            </div>
+          </div>
+          <div class="subject-grid" id="subjectGrid"></div>
+        </section>
+      </main>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>
